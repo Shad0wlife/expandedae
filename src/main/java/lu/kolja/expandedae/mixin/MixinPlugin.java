@@ -21,9 +21,11 @@ public class MixinPlugin implements IMixinConfigPlugin {
         new String[]{
                 "lu.kolja.expandedae.mixin.patternprovider.MixinPatternProviderLogic",
                 "lu.kolja.expandedae.mixin.patternprovider.MixinPatternProviderMenu",
-                "lu.kolja.expandedae.mixin.patternprovider.MixinPatternProviderScreen"
+                "lu.kolja.expandedae.mixin.patternprovider.MixinPatternProviderScreen",
+                "lu.kolja.expandedae.mixin.patternprovider.MixinPatternProviderLogicHost"
         },
         new String[]{
+                "appflux",
                 "appflux",
                 "appflux",
                 "appflux"
