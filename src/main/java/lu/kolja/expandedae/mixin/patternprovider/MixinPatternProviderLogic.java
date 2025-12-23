@@ -3,10 +3,8 @@ package lu.kolja.expandedae.mixin.patternprovider;
 import appeng.api.config.Actionable;
 import appeng.api.config.LockCraftingMode;
 import appeng.api.crafting.IPatternDetails;
-import appeng.api.implementations.blockentities.ICraftingMachine;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IManagedGridNode;
-import appeng.api.networking.crafting.ICraftingCPU;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.stacks.AEKey;
 import appeng.api.stacks.GenericStack;
@@ -17,28 +15,24 @@ import appeng.api.upgrades.UpgradeInventories;
 import appeng.api.util.IConfigManager;
 import appeng.helpers.patternprovider.PatternProviderLogic;
 import appeng.helpers.patternprovider.PatternProviderLogicHost;
+import appeng.helpers.patternprovider.PatternProviderTarget;
 import appeng.me.cluster.implementations.CraftingCPUCluster;
 import appeng.util.ConfigManager;
-import it.unimi.dsi.fastutil.objects.Object2LongMap;
+import com.llamalad7.mixinextras.sugar.Local;
 import lu.kolja.expandedae.definition.ExpItems;
 import lu.kolja.expandedae.definition.ExpSettings;
 import lu.kolja.expandedae.enums.ADDONS;
 import lu.kolja.expandedae.enums.BlockingMode;
 import lu.kolja.expandedae.helper.pattern.IPatternProviderLogic;
-import lu.kolja.expandedae.helper.pattern.PatternProviderTarget;
-import lu.kolja.expandedae.helper.pattern.PatternProviderTargetCache;
+import lu.kolja.expandedae.helper.pattern.ExpandedAE$PatternProviderTarget;
 import lu.kolja.expandedae.mixin.accessor.AccessorCraftingCpuLogic;
 import lu.kolja.expandedae.mixin.accessor.AccessorExecutingCraftingJob;
 import lu.kolja.expandedae.mixin.compat.advancedae.AAEAccessorAdvCraftingCPULogic;
 import lu.kolja.expandedae.mixin.compat.advancedae.AAEAccessorExecutingCraftingJob;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.pedroksl.advanced_ae.common.cluster.AdvCraftingCPU;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.*;
@@ -47,34 +41,24 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-@Mixin(value = PatternProviderLogic.class, remap = true)
+@Mixin(value = PatternProviderLogic.class)
 public abstract class MixinPatternProviderLogic implements IUpgradeableObject, IPatternProviderLogic {
     @Unique
     private static final boolean AAE_LOADED = ADDONS.ADV.isLoaded();
-
-    @Unique
-    private PatternProviderTargetCache[] expandedae$targetCaches;
 
     @Shadow @Final private IActionSource actionSource;
 
     @Unique
     private IUpgradeInventory expandedae$upgrades = UpgradeInventories.empty();
 
-    @Final
-    @Shadow
-    private PatternProviderLogicHost host;
+    @Shadow @Final private PatternProviderLogicHost host;
 
-    @Final
-    @Shadow
-    private IManagedGridNode mainNode;
+    @Shadow @Final private IManagedGridNode mainNode;
 
-    @Shadow
-    @Final
-    private IConfigManager configManager;
+    @Shadow @Final private IConfigManager configManager;
 
     @Shadow @Final private Set<AEKey> patternInputs;
 
@@ -91,6 +75,8 @@ public abstract class MixinPatternProviderLogic implements IUpgradeableObject, I
     @Shadow protected abstract Set<Direction> getActiveSides();
 
     @Shadow protected abstract void onPushPatternSuccess(IPatternDetails pattern);
+
+    @Shadow protected abstract boolean adapterAcceptsAll(PatternProviderTarget target, KeyCounter[] inputHolder);
 
     @Shadow protected abstract <T> void rearrangeRoundRobin(List<T> list);
 
@@ -121,13 +107,15 @@ public abstract class MixinPatternProviderLogic implements IUpgradeableObject, I
         return this.expandedae$upgrades;
     }
 
+    /*
+     * This only gets run in the non-AppFlux mixin, as it adds the upgrades value, which doesn't happen in the AppFlux mixin.
+     */
     @Inject(
             method = "<init>(Lappeng/api/networking/IManagedGridNode;Lappeng/helpers/patternprovider/PatternProviderLogicHost;I)V",
             at = @At("TAIL")
     )
     private void eae_$initUpgrade(IManagedGridNode mainNode, PatternProviderLogicHost host, int patternInventorySize, CallbackInfo ci) {
         expandedae$upgrades = UpgradeInventories.forMachine(host.getTerminalIcon().getItem(), 1, this::eae_$onUpgradesChanged);
-        this.expandedae$targetCaches = new PatternProviderTargetCache[6];
     }
 
     @Inject(
@@ -175,119 +163,52 @@ public abstract class MixinPatternProviderLogic implements IUpgradeableObject, I
         return configManager.getSetting(ExpSettings.BLOCKING_MODE);
     }
 
-    /**
-     * @author Kolja
-     * @reason .
-     */
-    @Overwrite
-    public boolean pushPattern(IPatternDetails patternDetails, KeyCounter[] inputHolder) {
-        if (this.sendList.isEmpty() && this.mainNode.isActive() && this.patterns.contains(patternDetails)) {
-            BlockEntity be = this.host.getBlockEntity();
-            Level level = be.getLevel();
-            if (this.getCraftingLockedReason() == LockCraftingMode.NONE) {
-                record PushTarget(Direction direction, PatternProviderTarget target) {}
+    @Inject(
+            method = "pushPattern",
+            cancellable = true,
+            at = @At(
+                    value = "INVOKE_ASSIGN",
+                    target = "Lappeng/helpers/patternprovider/PatternProviderLogic$1PushTarget;target()Lappeng/helpers/patternprovider/PatternProviderTarget;"
+            )
+    )
+    private void expandedae$pushPatternSwitch(IPatternDetails patternDetails, KeyCounter[] inputHolder, CallbackInfoReturnable<Boolean> cir, @Local PatternProviderTarget adapter, @Local Direction direction){
+        ExpandedAE$PatternProviderTarget eaeAdapter = (ExpandedAE$PatternProviderTarget)adapter;
 
-                var possibleTargets = new ArrayList<PushTarget>();
-
-                for (Direction direction : this.getActiveSides()) {
-                    BlockPos adjPos = be.getBlockPos().relative(direction);
-                    BlockEntity adjBe = level.getBlockEntity(adjPos);
-                    Direction adjBeSide = direction.getOpposite();
-                    ICraftingMachine craftingMachine = ICraftingMachine.of(level, adjPos, adjBeSide);
-                    if (craftingMachine != null && craftingMachine.acceptsPlans()) {
-                        if (craftingMachine.pushPattern(patternDetails, inputHolder, adjBeSide)) {
-                            this.onPushPatternSuccess(patternDetails);
-                            return true;
+        switch (expandedae$getBlockingMode()) {
+            case ALL -> {
+                if ((!this.isBlocking() || eaeAdapter.expandedae$getStorage().getAvailableStacks().isEmpty()) && this.adapterAcceptsAll(eaeAdapter, inputHolder)) {
+                    patternDetails.pushInputsToExternalInventory(inputHolder, (what, amount) -> {
+                        long inserted = adapter.insert(what, amount, Actionable.MODULATE);
+                        if (inserted < amount) {
+                            addToSendList(what, amount - inserted);
                         }
-                    } else {
-                        PatternProviderTarget adapter = this.expandedae$findAdapter(direction);
-                        if (adapter != null) {
-                            possibleTargets.add(new PushTarget(direction, adapter));
-                        }
-                    }
-                }
-
-                if (patternDetails.supportsPushInputsToExternalInventory()) {
-                    this.rearrangeRoundRobin(possibleTargets);
-
-                    for (PushTarget target : possibleTargets) {
-                        Direction direction = target.direction();
-                        PatternProviderTarget adapter = target.target();
-                        switch (expandedae$getBlockingMode()) {
-                            case ALL -> {
-                                if ((!this.isBlocking() || adapter.getStorage().getAvailableStacks().isEmpty()) && this.expandedae$adapterAcceptsAll(adapter, inputHolder)) {
-                                    patternDetails.pushInputsToExternalInventory(inputHolder, (what, amount) -> {
-                                        long inserted = adapter.insert(what, amount, Actionable.MODULATE);
-                                        if (inserted < amount) {
-                                            this.addToSendList(what, amount - inserted);
-                                        }
-                                    });
-                                    this.onPushPatternSuccess(patternDetails);
-                                    this.sendDirection = direction;
-                                    this.sendStacksOut();
-                                    ++this.roundRobinIndex;
-                                    return true;
-                                }
-                            }
-                            case SMART -> {
-                                if ((!this.isBlocking() || adapter.getStorage().getAvailableStacks().isEmpty() || adapter.onlyHasPatternInput(this.patternInputs)) && this.expandedae$adapterAcceptsAll(adapter, inputHolder)) {
-                                    patternDetails.pushInputsToExternalInventory(inputHolder, (what, amount) -> {
-                                        long inserted = adapter.insert(what, amount, Actionable.MODULATE);
-                                        if (inserted < amount) {
-                                            this.addToSendList(what, amount - inserted);
-                                        }
-                                    });
-                                    this.onPushPatternSuccess(patternDetails);
-                                    this.sendDirection = direction;
-                                    this.sendStacksOut();
-                                    ++this.roundRobinIndex;
-                                    return true;
-                                }
-                            }
-                            case DEFAULT -> {
-                                if ((!this.isBlocking() || !adapter.containsPatternInput(this.patternInputs)) && this.expandedae$adapterAcceptsAll(adapter, inputHolder)) {
-                                    patternDetails.pushInputsToExternalInventory(inputHolder, (what, amount) -> {
-                                        long inserted = adapter.insert(what, amount, Actionable.MODULATE);
-                                        if (inserted < amount) {
-                                            this.addToSendList(what, amount - inserted);
-                                        }
-                                    });
-                                    this.onPushPatternSuccess(patternDetails);
-                                    this.sendDirection = direction;
-                                    this.sendStacksOut();
-                                    ++this.roundRobinIndex;
-                                    return true;
-                                }
-                            }
-                        }
-                    }
+                    });
+                    onPushPatternSuccess(patternDetails);
+                    sendDirection = direction;
+                    sendStacksOut();
+                    ++roundRobinIndex;
+                    cir.setReturnValue(true);
                 }
             }
-        }
-        return false;
-    }
-
-    @Unique
-    private @Nullable PatternProviderTarget expandedae$findAdapter(Direction side) {
-        if (this.expandedae$targetCaches[side.get3DDataValue()] == null) {
-            BlockEntity thisBe = this.host.getBlockEntity();
-            this.expandedae$targetCaches[side.get3DDataValue()] = new PatternProviderTargetCache((ServerLevel) thisBe.getLevel(), thisBe.getBlockPos().relative(side), side.getOpposite(), this.actionSource);
-        }
-        return this.expandedae$targetCaches[side.get3DDataValue()].find();
-    }
-
-    @Unique
-    private boolean expandedae$adapterAcceptsAll(PatternProviderTarget target, KeyCounter[] inputHolder) {
-        int var4 = inputHolder.length;
-        for (KeyCounter counter : inputHolder) {
-            for (Object2LongMap.Entry<AEKey> input : counter) {
-                long inserted = target.insert(input.getKey(), input.getLongValue(), Actionable.SIMULATE);
-                if (inserted == 0L) {
-                    return false;
+            case SMART -> {
+                if ((!this.isBlocking() || eaeAdapter.expandedae$getStorage().getAvailableStacks().isEmpty() || eaeAdapter.expandedae$onlyHasPatternInput(this.patternInputs)) && this.adapterAcceptsAll(eaeAdapter, inputHolder)) {
+                    patternDetails.pushInputsToExternalInventory(inputHolder, (what, amount) -> {
+                        long inserted = adapter.insert(what, amount, Actionable.MODULATE);
+                        if (inserted < amount) {
+                            addToSendList(what, amount - inserted);
+                        }
+                    });
+                    onPushPatternSuccess(patternDetails);
+                    sendDirection = direction;
+                    sendStacksOut();
+                    ++roundRobinIndex;
+                    cir.setReturnValue(true);
                 }
             }
+            case DEFAULT -> {
+                //Fallthrough.
+            }
         }
-        return true;
     }
 
     @Inject(

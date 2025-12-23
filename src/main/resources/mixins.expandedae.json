@@ -3,6 +3,9 @@
   "package": "lu.kolja.expandedae.mixin",
   "compatibilityLevel": "JAVA_21",
   "plugin": "lu.kolja.expandedae.mixin.MixinPlugin",
+  "mixinextras": {
+    "minVersion": "0.5.0"
+  },
   "mixins": [
     "accessor.AccessorBuiltInModelHooks",
     "accessor.AccessorCraftingCpuLogic",
@@ -23,6 +26,8 @@
     "patternprovider.MixinPatternProviderLogic",
     "patternprovider.MixinPatternProviderLogicHost",
     "patternprovider.MixinPatternProviderMenu",
+    "patternprovider.MixinPatternProviderTargetImpl",
+    "patternprovider.MixinPatternProviderTargetCacheImpl",
     "terminal.MixinProcessingEncodingPanel"
   ],
   "client": [
