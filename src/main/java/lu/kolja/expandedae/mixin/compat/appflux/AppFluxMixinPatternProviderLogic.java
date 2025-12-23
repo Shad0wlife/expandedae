@@ -16,6 +16,8 @@ import appeng.helpers.patternprovider.PatternProviderLogicHost;
 import appeng.helpers.patternprovider.PatternProviderTarget;
 import appeng.me.cluster.implementations.CraftingCPUCluster;
 import appeng.util.ConfigManager;
+import com.llamalad7.mixinextras.expression.Definition;
+import com.llamalad7.mixinextras.expression.Expression;
 import com.llamalad7.mixinextras.sugar.Local;
 import lu.kolja.expandedae.definition.ExpItems;
 import lu.kolja.expandedae.definition.ExpSettings;
@@ -96,21 +98,30 @@ public abstract class AppFluxMixinPatternProviderLogic implements IUpgradeableOb
         return configManager.getSetting(ExpSettings.BLOCKING_MODE);
     }
 
+    @Definition(id = "adapter", local = @Local(type = PatternProviderTarget.class, name = "adapter"))
+    @Definition(id = "target", method = "Lappeng/helpers/patternprovider/PatternProviderLogic$1PushTarget;target()Lappeng/helpers/patternprovider/PatternProviderTarget;")
+    @Expression("adapter = ?.target()")
     @Inject(
             method = "pushPattern",
             cancellable = true,
             at = @At(
-                    value = "INVOKE_ASSIGN",
-                    target = "Lappeng/helpers/patternprovider/PatternProviderLogic$1PushTarget;target()Lappeng/helpers/patternprovider/PatternProviderTarget;"
+                    value = "MIXINEXTRAS:EXPRESSION",
+                    shift = At.Shift.AFTER
             )
     )
-    private void expandedae$pushPatternSwitch(IPatternDetails patternDetails, KeyCounter[] inputHolder, CallbackInfoReturnable<Boolean> cir, @Local Direction direction, @Local PatternProviderTarget adapter){
+    private void expandedae$pushPatternSwitch(
+            IPatternDetails patternDetails,
+            KeyCounter[] inputHolder,
+            CallbackInfoReturnable<Boolean> cir,
+            @Local(name = "direction") Direction direction,
+            @Local(name = "adapter") PatternProviderTarget adapter){
         //Cast to avoid setting up interface injection...
         ExpandedAE$PatternProviderTarget eaeAdapter = (ExpandedAE$PatternProviderTarget)adapter;
 
         switch (expandedae$getBlockingMode()) {
             case ALL -> {
                 if ((!this.isBlocking() || eaeAdapter.expandedae$getStorage().getAvailableStacks().isEmpty()) && this.adapterAcceptsAll(eaeAdapter, inputHolder)) {
+                    //Keep the actual code as close to the original as possible so that later injections or similar can target it properly
                     patternDetails.pushInputsToExternalInventory(inputHolder, (what, amount) -> {
                         long inserted = adapter.insert(what, amount, Actionable.MODULATE);
                         if (inserted < amount) {
@@ -126,6 +137,7 @@ public abstract class AppFluxMixinPatternProviderLogic implements IUpgradeableOb
             }
             case SMART -> {
                 if ((!this.isBlocking() || eaeAdapter.expandedae$getStorage().getAvailableStacks().isEmpty() || eaeAdapter.expandedae$onlyHasPatternInput(this.patternInputs)) && this.adapterAcceptsAll(eaeAdapter, inputHolder)) {
+                    //Keep the actual code as close to the original as possible so that later injections or similar can target it properly
                     patternDetails.pushInputsToExternalInventory(inputHolder, (what, amount) -> {
                         long inserted = adapter.insert(what, amount, Actionable.MODULATE);
                         if (inserted < amount) {

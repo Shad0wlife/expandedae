@@ -18,6 +18,8 @@ import appeng.helpers.patternprovider.PatternProviderLogicHost;
 import appeng.helpers.patternprovider.PatternProviderTarget;
 import appeng.me.cluster.implementations.CraftingCPUCluster;
 import appeng.util.ConfigManager;
+import com.llamalad7.mixinextras.expression.Definition;
+import com.llamalad7.mixinextras.expression.Expression;
 import com.llamalad7.mixinextras.sugar.Local;
 import lu.kolja.expandedae.definition.ExpItems;
 import lu.kolja.expandedae.definition.ExpSettings;
@@ -163,15 +165,23 @@ public abstract class MixinPatternProviderLogic implements IUpgradeableObject, I
         return configManager.getSetting(ExpSettings.BLOCKING_MODE);
     }
 
+    @Definition(id = "adapter", local = @Local(type = PatternProviderTarget.class, name = "adapter"))
+    @Definition(id = "target", method = "Lappeng/helpers/patternprovider/PatternProviderLogic$1PushTarget;target()Lappeng/helpers/patternprovider/PatternProviderTarget;")
+    @Expression("adapter = ?.target()")
     @Inject(
             method = "pushPattern",
             cancellable = true,
             at = @At(
-                    value = "INVOKE_ASSIGN",
-                    target = "Lappeng/helpers/patternprovider/PatternProviderLogic$1PushTarget;target()Lappeng/helpers/patternprovider/PatternProviderTarget;"
+                    value = "MIXINEXTRAS:EXPRESSION",
+                    shift = At.Shift.AFTER
             )
     )
-    private void expandedae$pushPatternSwitch(IPatternDetails patternDetails, KeyCounter[] inputHolder, CallbackInfoReturnable<Boolean> cir, @Local PatternProviderTarget adapter, @Local Direction direction){
+    private void expandedae$pushPatternSwitch(
+            IPatternDetails patternDetails,
+            KeyCounter[] inputHolder,
+            CallbackInfoReturnable<Boolean> cir,
+            @Local(name = "direction") Direction direction,
+            @Local(name = "adapter") PatternProviderTarget adapter){
         ExpandedAE$PatternProviderTarget eaeAdapter = (ExpandedAE$PatternProviderTarget)adapter;
 
         switch (expandedae$getBlockingMode()) {
