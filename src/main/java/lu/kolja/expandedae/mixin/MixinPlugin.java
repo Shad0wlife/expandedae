@@ -22,13 +22,15 @@ public class MixinPlugin implements IMixinConfigPlugin {
                 "lu.kolja.expandedae.mixin.patternprovider.MixinPatternProviderLogic",
                 "lu.kolja.expandedae.mixin.patternprovider.MixinPatternProviderLogicHost",
                 "lu.kolja.expandedae.mixin.patternprovider.MixinPatternProviderMenu",
-                "lu.kolja.expandedae.mixin.patternprovider.MixinPatternProviderScreen"
+                "lu.kolja.expandedae.mixin.patternprovider.MixinPatternProviderScreen",
+                "lu.kolja.expandedae.mixin.cpu.MixinCraftingCPUCluster"
         },
         new String[]{
                 "appflux",
                 "appflux",
                 "appflux",
-                "appflux"
+                "appflux",
+                "extendedae_plus"
         }
     );
 
